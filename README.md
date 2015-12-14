@@ -1,5 +1,8 @@
 # mama - Metadata 'Ask-Me-Anything' microservice for DSpace repositories #
 
+[![Build Status](https://travis-ci.org/MITLibraries/mama.svg?branch=master)]
+(https://travis-ci.org/MITLibraries/mama)
+
 mama is an API server for a very simple metadata query service. The service exposes a single endpoint to which the
 client passes (in query parameters) a metadata field name (e.g. _dc.identifier.uri_), and a value
 (_http://hdl.handle.net/123456789/2_). If any DSpace items have metadata values matching the query, they
