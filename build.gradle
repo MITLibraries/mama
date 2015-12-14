@@ -1,0 +1,26 @@
+group 'edu.mit.lib'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'java'
+
+sourceCompatibility = 1.8
+archivesBaseName = 'mama'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'com.sparkjava:spark-core:2.3'
+    compile 'org.jdbi:jdbi:2.70'
+    compile 'org.postgresql:postgresql:9.4-1206-jdbc42'
+    compile 'com.google.guava:guava:18.0'
+    testCompile 'junit:junit:4.11'
+}
+
+task fatJar(type: Jar) {
+    manifest { attributes("Main-Class": "edu.mit.lib.mama.Mama") }
+    baseName = archivesBaseName + '-all'
+    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
+    with jar
+}
