@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 MIT Libraries
+ * Copyright (C) 2016 MIT Libraries
  * Licensed under: http://www.apache.org/licenses/LICENSE-2.0
  */
 package edu.mit.lib.mama;
@@ -42,14 +42,11 @@ public class Mama {
 
     public static void main(String[] args) {
 
-        Properties props = new Properties();
-        props.setProperty("user", System.getenv("MAMA_DB_USER"));
-        props.setProperty("password", System.getenv("MAMA_DB_PASSWD"));
-        props.setProperty("readOnly", "true");
-
-        DBI dbi = new DBI(System.getenv("MAMA_DB_URL"), props);
-
-        //port(8080);
+        Properties props = findConfig(args);
+        DBI dbi = new DBI(props.getProperty("dburl"), props);
+        if (System.getenv("MAMA_SVC_PORT") != null) {
+            port(Integer.valueOf(System.getenv("MAMA_SVC_PORT")));
+        }
 
         before((req, res) -> {
            if (isNullOrEmpty(req.queryParams("qf")) || isNullOrEmpty(req.queryParams("qv"))) {
@@ -60,11 +57,18 @@ public class Mama {
         get("/item", (req, res) -> {
             try (Handle hdl = dbi.open()) {
                 if (findFieldId(hdl, req.queryParams("qf")) != -1) {
-                    res.type("application/json");
-                    return "{ " + jsonValue("field", req.queryParams("qf"), true) + ",\n" +
+                    List<String> results = findItems(hdl, req.queryParams("qf"), req.queryParams("qv"), req.queryParamsValues("rf"));
+                    if (results.size() > 0) {
+                        res.type("application/json");
+                        return "{ " +
+                                  jsonValue("field", req.queryParams("qf"), true) + ",\n" +
                                   jsonValue("value", req.queryParams("qv"), true) + ",\n" +
-                                  jsonValue("items", findItems(hdl, req.queryParams("qf"), req.queryParams("qv"), req.queryParamsValues("rf"))
-                                  .stream().collect(Collectors.joining(",", "[", "]")), false) + "\n" + " }";
+                                  jsonValue("items", results.stream().collect(Collectors.joining(",", "[", "]")), false) + "\n" +
+                               " }";
+                    } else {
+                        res.status(404);
+                        return "No items found for: " + req.queryParams("qf") + "::" + req.queryParams("qv");
+                    }
                 } else {
                     res.status(404);
                     return "No such field: " + req.queryParams("qf");
@@ -74,6 +78,21 @@ public class Mama {
                 return "Internal system error: " + e.getMessage();
             }
         });
+    }
+
+    private static Properties findConfig(String[] args) {
+        Properties props = new Properties();
+        if (args.length == 3) {
+            props.setProperty("dburl", args[0]);
+            props.setProperty("user", args[1]);
+            props.setProperty("password", args[2]);
+        } else {
+            props.setProperty("dburl", System.getenv("MAMA_DB_URL"));
+            props.setProperty("user", System.getenv("MAMA_DB_USER"));
+            props.setProperty("password", System.getenv("MAMA_DB_PASSWD"));
+            props.setProperty("readOnly", "true"); // Postgres only, h2 chokes on this directive
+        }
+        return props;
     }
 
     private static String jsonValue(String name, String value, boolean primitive) {
@@ -121,9 +140,9 @@ public class Mama {
             query = hdl.createQuery(queryBase + "and lmv.metadata_field_id in (" + inList + ")");
         }
         List<Mdv> rs = query.bind(0, findFieldId(hdl, qfield)).bind(1, value).map(new MdvMapper()).list();
-        // group the list by Item, then construct a JSON object for each item
-        return rs.stream().collect(Collectors.groupingBy(Mdv::getItemId)).entrySet()
-                 .stream().map(Map.Entry::getValue).map(p -> jsonObject(p)).collect(Collectors.toList());
+        // group the list by Item, then construct a JSON object with each item's properties
+        return rs.stream().collect(Collectors.groupingBy(Mdv::getItemId)).values()
+                 .stream().map(p -> jsonObject(p)).collect(Collectors.toList());
     }
 
     static class Mdv {

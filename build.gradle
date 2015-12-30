@@ -16,6 +16,9 @@ dependencies {
     compile 'org.postgresql:postgresql:9.4-1206-jdbc42'
     compile 'com.google.guava:guava:18.0'
     testCompile 'junit:junit:4.11'
+    testCompile 'org.apache.httpcomponents:httpcomponents-core:4.4.4'
+    testCompile 'com.h2database:h2:1.4.190'
+    testCompile 'guru.nidi.raml:raml-tester:0.8.7'
 }
 
 task fatJar(type: Jar) {
