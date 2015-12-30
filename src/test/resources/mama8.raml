@@ -1,0 +1,50 @@
+#%RAML 0.8
+title: DSpace metadata micro API
+version: v1
+protocols: [HTTP]
+baseUri: http://localhost:4567
+mediaType: application/json
+documentation:
+- title: A metadata API for DSpace
+  content: This service exposes item metadata both as a query space, but also
+           as a result description language. One can ask about items matching
+           a metadata statement, and format the results with any defined
+           metadata values the item possesses.
+schemas:
+- item: |
+    {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "description": "A DSpace item"
+    }
+
+/item:
+  displayName: Item
+  description: returns zero or more items matching metadata query
+  get:
+    description: returns items matching metadata query
+    queryParameters:
+      qf:
+        type: string
+        description: the name of the query metadata field - as schema.element[.qualifier]
+        required: true
+        example: dc.identifier.uri
+      qv:
+        type: string
+        description: the value of the query metadata field
+        required: true
+        example: http://hdl.handle.net/123456789/1
+      rf:
+        type: string
+        description: the names of the fields to return for matched items
+        example: dc.title
+    responses:
+      200:
+        description: when query is well-formed
+        body:
+          application/json:
+            schema: item
+      400:
+        description: when unknown/invalid query field name requested
+      404:
+        description: when unknown/invalid query field name requested

@@ -26,14 +26,7 @@ If an item with that handle existed in the DSpace instance, the service would re
         ]
     }
 
-If no items matched the query, an empty list would be returned:
-
-    {
-        "field": "dc.identifier.uri",
-        "value": "http://hdl.handle.net/123456789/3",
-        "items": []
-    }
-
+If no items matched the query, a 404 response would be returned.
 If more display fields were requested, they would be included with each item object:
 
     http://mama.my.edu/item?qf=dc.identifier.uri&qv=http://hdl.handle.net/123456789/3&rf=dc.title&rf=dc.creator
@@ -59,8 +52,11 @@ be available (probably any version 1.4 or later), but the service will not share
 ## Deployment ##
 
 The server is implemented in a Java framework that utilizes an integrated, embedded web server (Jetty),
-so no Tomcat (or other container) is needed. Moreover, the code builds to a so-called 'fat' jar,
-which includes all the dependencies, so the service is started with this simple invocation:
+so no Tomcat (or other container) is needed. Moreover, the code can be built to a so-called 'fat' jar:
+
+    gradle fatJar
+
+which includes all the dependencies, so the service could be started with this simple invocation:
 
     java -jar mama-all-<version>.jar
 
@@ -70,5 +66,9 @@ owned by the DSpace instance. Connection information must be passed in the follo
     MAMA_DB_URL=jdbc:postgresql://localhost/dspace
     MAMA_DB_USER=dspace
     MAMA_DB_PASSWD=imasecret
+
+By default, the service will listen on port 4567. To change this, just set another environment variable:
+
+    MAMA_SVC_PORT=8080
 
 That's all you need to operate.
