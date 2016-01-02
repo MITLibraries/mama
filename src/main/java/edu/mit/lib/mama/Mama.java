@@ -25,6 +25,9 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import static com.google.common.base.Strings.*;
 
+import io.honeybadger.reporter.HoneybadgerReporter;
+import io.honeybadger.reporter.NoticeReporter;
+
 /**
  * Mama (metadata ask-me-anything) is a microservice returning a JSON-encoded
  * list of zero or more URIs or specified metadata of DSpace items matching
@@ -39,6 +42,7 @@ public class Mama {
     private static final String URI_FIELD = "dc.identifier.uri";
     // cache of field names <-> field DBIDs
     private static BiMap<String, Integer> fieldIds = HashBiMap.create();
+    private static NoticeReporter reporter;
 
     public static void main(String[] args) {
 
@@ -46,6 +50,10 @@ public class Mama {
         DBI dbi = new DBI(props.getProperty("dburl"), props);
         if (System.getenv("MAMA_SVC_PORT") != null) {
             port(Integer.valueOf(System.getenv("MAMA_SVC_PORT")));
+        }
+        // if API key given, use exception monitoring service
+        if (System.getenv("HONEYBADGER_API_KEY") != null) {
+            reporter = new HoneybadgerReporter();
         }
 
         before((req, res) -> {
@@ -74,6 +82,7 @@ public class Mama {
                     return "No such field: " + req.queryParams("qf");
                 }
             } catch (Exception e) {
+                if (null != reporter) reporter.reportError(e);
                 res.status(500);
                 return "Internal system error: " + e.getMessage();
             }
@@ -130,7 +139,7 @@ public class Mama {
 
     private static List<String> findItems(Handle hdl, String qfield, String value, String[] rfields) {
         String queryBase = "select lmv.* from metadatavalue lmv, metadatavalue rmv where " +
-                           "lmv.item_id = rmv.item_id and rmv.metadata_field_id = ? and rmv.text_value = ? ";
+                           "lmv.dso_id = rmv.dso_id and rmv.metadata_field_id = ? and rmv.text_value = ? ";
         Query<Map<String, Object>> query;
         if (null == rfields) { // just return default field
             query = hdl.createQuery(queryBase + "and lmv.metadata_field_id = ?").bind(2, findFieldId(hdl, URI_FIELD));
@@ -162,7 +171,7 @@ public class Mama {
     static class MdvMapper implements ResultSetMapper<Mdv> {
         @Override
         public Mdv map(int index, ResultSet rs, StatementContext ctx) throws SQLException {
-            return new Mdv(rs.getInt("item_id"), fieldIds.inverse().get(rs.getInt("metadata_field_id")), rs.getString("text_value"));
+            return new Mdv(rs.getInt("dso_id"), fieldIds.inverse().get(rs.getInt("metadata_field_id")), rs.getString("text_value"));
         }
     }
 }
