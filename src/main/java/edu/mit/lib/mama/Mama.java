@@ -139,7 +139,7 @@ public class Mama {
 
     private static List<String> findItems(Handle hdl, String qfield, String value, String[] rfields) {
         String queryBase = "select lmv.* from metadatavalue lmv, metadatavalue rmv where " +
-                           "lmv.dso_id = rmv.dso_id and rmv.metadata_field_id = ? and rmv.text_value = ? ";
+                           "lmv.item_id = rmv.item_id and rmv.metadata_field_id = ? and rmv.text_value = ? ";
         Query<Map<String, Object>> query;
         if (null == rfields) { // just return default field
             query = hdl.createQuery(queryBase + "and lmv.metadata_field_id = ?").bind(2, findFieldId(hdl, URI_FIELD));
@@ -171,7 +171,7 @@ public class Mama {
     static class MdvMapper implements ResultSetMapper<Mdv> {
         @Override
         public Mdv map(int index, ResultSet rs, StatementContext ctx) throws SQLException {
-            return new Mdv(rs.getInt("dso_id"), fieldIds.inverse().get(rs.getInt("metadata_field_id")), rs.getString("text_value"));
+            return new Mdv(rs.getInt("item_id"), fieldIds.inverse().get(rs.getInt("metadata_field_id")), rs.getString("text_value"));
         }
     }
 }
