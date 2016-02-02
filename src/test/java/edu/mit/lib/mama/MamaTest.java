@@ -47,8 +47,6 @@ public class MamaTest {
     private static DBI database;
     private static RamlDefinition api = RamlLoaders.fromClasspath().load("mama8.raml");
     private static RamlHttpClient baseClient = api.createHttpClient();
-    private static Thread apiService =
-        new Thread(() -> Mama.main(new String[] {TEST_DB_URL, "username", "password"}));
 
     @BeforeClass
     public static void setupService() throws Exception {
@@ -69,14 +67,20 @@ public class MamaTest {
            hdl.execute("insert into metadatavalue (metadata_value_id, item_id, metadata_field_id, text_value) values(1, 1, 1, 'http://hdl.handle.net/123456789/3')");
            hdl.execute("insert into metadatavalue (metadata_value_id, item_id, metadata_field_id, text_value) values(2, 2, 2, 'A Very Important Study')");
         }
-        // launch api service in it's own thread - then give it time to initialize before firing tests at it
-        apiService.start();
-        Thread.currentThread().sleep(2000);
+        // launch API service
+        Mama.main(new String[] {TEST_DB_URL, "username", "password"});
     }
 
     @Test
     public void apiSpecValidity() throws IOException {
         assertThat(api.validate(), validates());
+    }
+
+    @Test
+    public void pingRequest() throws IOException {
+        String url = TEST_SVC_URL + "/ping";
+        HttpResponse response = baseClient.execute(new HttpGet(url));
+        assertEquals(response.getStatusLine().getStatusCode(), 200);
     }
 
     @Test

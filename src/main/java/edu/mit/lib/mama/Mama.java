@@ -10,7 +10,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import javax.servlet.ServletOutputStream;
 
 import static spark.Spark.*;
 
@@ -25,12 +28,21 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import static com.google.common.base.Strings.*;
 
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
+import com.codahale.metrics.json.MetricsModule;
+import com.codahale.metrics.jdbi.InstrumentedTimingCollector;
+import static com.codahale.metrics.MetricRegistry.*;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import io.honeybadger.reporter.HoneybadgerReporter;
 import io.honeybadger.reporter.NoticeReporter;
 
 /**
  * Mama (metadata ask-me-anything) is a microservice returning a JSON-encoded
- * list of zero or more URIs or specified metadata of DSpace items matching
+ * list of one or more URIs or specified metadata of DSpace items matching
  * the query in the request, a metadata field/value pair. Unknown fields 404.
  * Request URI format: <server>/item?qf=<field>&qv=<value>[&rf=<field>]*
  * where field = schema.element[.qualifier] and <value> is URL-encoded
@@ -43,11 +55,19 @@ public class Mama {
     // cache of field names <-> field DBIDs
     private static BiMap<String, Integer> fieldIds = HashBiMap.create();
     private static NoticeReporter reporter;
+    private static MetricRegistry metrics = new MetricRegistry();
+    private static Meter itemReqs = metrics.meter(name(Mama.class, "item", "requests"));
+    private static Timer respTime = metrics.timer(name(Mama.class, "item", "responseTime"));
 
     public static void main(String[] args) {
 
         Properties props = findConfig(args);
         DBI dbi = new DBI(props.getProperty("dburl"), props);
+        // Advanced instrumentation/metrics if requested
+        if (System.getenv("MAMA_DB_METRICS") != null) {
+            dbi.setTimingCollector(new InstrumentedTimingCollector(metrics));
+        }
+        // reassign default port 4567
         if (System.getenv("MAMA_SVC_PORT") != null) {
             port(Integer.valueOf(System.getenv("MAMA_SVC_PORT")));
         }
@@ -56,13 +76,47 @@ public class Mama {
             reporter = new HoneybadgerReporter();
         }
 
-        before((req, res) -> {
-           if (isNullOrEmpty(req.queryParams("qf")) || isNullOrEmpty(req.queryParams("qv"))) {
-               halt(400, "Must supply field and value query parameters 'qf' and 'qv'");
-           }
+        get("/ping", (req, res) -> {
+            res.type("text/plain");
+            res.header("Cache-Control", "must-revalidate,no-cache,no-store");
+            return "pong";
+        });
+
+        get("/metrics", (req, res) -> {
+            res.type("application/json");
+            res.header("Cache-Control", "must-revalidate,no-cache,no-store");
+            ObjectMapper objectMapper = new ObjectMapper().registerModule(new MetricsModule(TimeUnit.SECONDS, TimeUnit.MILLISECONDS, true));
+            try (ServletOutputStream outputStream = res.raw().getOutputStream()) {
+                objectMapper.writer().withDefaultPrettyPrinter().writeValue(outputStream, metrics);
+            }
+            return "";
+        });
+
+        get("/shutdown", (req, res) -> {
+            boolean auth = false;
+            try {
+                if (! isNullOrEmpty(System.getenv("MAMA_SHUTDOWN_KEY")) &&
+                    ! isNullOrEmpty(req.queryParams("key")) &&
+                    System.getenv("MAMA_SHUTDOWN_KEY").equals(req.queryParams("key"))) {
+                    auth = true;
+                    return "Shutting down";
+                } else {
+                    res.status(401);
+                    return "Not authorized";
+                }
+            } finally {
+                if (auth) {
+                    stop();
+                }
+            }
         });
 
         get("/item", (req, res) -> {
+            if (isNullOrEmpty(req.queryParams("qf")) || isNullOrEmpty(req.queryParams("qv"))) {
+                halt(400, "Must supply field and value query parameters 'qf' and 'qv'");
+            }
+            itemReqs.mark();
+            Timer.Context context = respTime.time();
             try (Handle hdl = dbi.open()) {
                 if (findFieldId(hdl, req.queryParams("qf")) != -1) {
                     List<String> results = findItems(hdl, req.queryParams("qf"), req.queryParams("qv"), req.queryParamsValues("rf"));
@@ -85,8 +139,12 @@ public class Mama {
                 if (null != reporter) reporter.reportError(e);
                 res.status(500);
                 return "Internal system error: " + e.getMessage();
+            } finally {
+                context.stop();
             }
         });
+
+        awaitInitialization();
     }
 
     private static Properties findConfig(String[] args) {
@@ -96,9 +154,9 @@ public class Mama {
             props.setProperty("user", args[1]);
             props.setProperty("password", args[2]);
         } else {
-            props.setProperty("dburl", System.getenv("MAMA_DB_URL"));
-            props.setProperty("user", System.getenv("MAMA_DB_USER"));
-            props.setProperty("password", System.getenv("MAMA_DB_PASSWD"));
+            props.setProperty("dburl", nullToEmpty(System.getenv("MAMA_DB_URL")));
+            props.setProperty("user", nullToEmpty(System.getenv("MAMA_DB_USER")));
+            props.setProperty("password", nullToEmpty(System.getenv("MAMA_DB_PASSWD")));
             props.setProperty("readOnly", "true"); // Postgres only, h2 chokes on this directive
         }
         return props;
